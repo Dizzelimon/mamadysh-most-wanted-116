@@ -1,0 +1,107 @@
+name: Android ARM64 APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    name: Build Android ARM64 APK
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Validate Godot project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f project.godot || { echo "::error::project.godot is missing"; exit 1; }
+          main_scene="$(grep -m1 '^run/main_scene=' project.godot | cut -d '"' -f 2)"
+          if [[ -z "$main_scene" ]]; then
+            echo "::error::project.godot does not define run/main_scene"
+            exit 1
+          fi
+          scene_path="${main_scene#res://}"
+          if [[ ! -f "$scene_path" ]]; then
+            echo "::error::Startup scene not found: $main_scene"
+            exit 1
+          fi
+          if ! grep -q '^architectures/arm64-v8a=true$' export_presets.cfg; then
+            echo "::error::Android preset must enable architectures/arm64-v8a"
+            exit 1
+          fi
+          echo "Project files and ARM64 export preset found."
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+      - name: Install Android build packages
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "build-tools;34.0.0" \
+            "platforms;android-34" \
+            "cmake;3.10.2.4988404" \
+            "ndk;23.2.8568313"
+      - name: Install Godot 4.3 and Android export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/godot" "$HOME/.local/share/godot/export_templates/4.3.stable"
+          curl --fail --location --retry 3 \
+            "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip" \
+            --output "$RUNNER_TEMP/godot/editor.zip"
+          unzip -q "$RUNNER_TEMP/godot/editor.zip" -d "$RUNNER_TEMP/godot"
+          echo "$RUNNER_TEMP/godot" >> "$GITHUB_PATH"
+          curl --fail --location --retry 3 \
+            "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz" \
+            --output "$RUNNER_TEMP/godot/templates.tpz"
+          mkdir "$RUNNER_TEMP/godot/templates"
+          unzip -q "$RUNNER_TEMP/godot/templates.tpz" -d "$RUNNER_TEMP/godot/templates"
+          cp -a "$RUNNER_TEMP/godot/templates/templates/." "$HOME/.local/share/godot/export_templates/4.3.stable/"
+          chmod +x "$RUNNER_TEMP/godot/Godot_v4.3-stable_linux.x86_64"
+      - name: Prepare temporary debug signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/android-debug.keystore"
+          keytool -genkeypair -noprompt -v \
+            -keystore "$key_path" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+          python3 - "$key_path" <<'PY'
+          from pathlib import Path
+          import sys
+
+          preset = Path("export_presets.cfg")
+          data = preset.read_text(encoding="utf-8")
+          data = data.replace('keystore/debug="/opt/godot/mamadysh_release.jks"', f'keystore/debug="{sys.argv[1]}"')
+          data = data.replace('keystore/debug_user="mamadysh"', 'keystore/debug_user="androiddebugkey"')
+          data = data.replace('keystore/debug_password="mamadysh116"', 'keystore/debug_password="android"')
+          preset.write_text(data, encoding="utf-8")
+          PY
+      - name: Import project and export APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot="$RUNNER_TEMP/godot/Godot_v4.3-stable_linux.x86_64"
+          "$godot" --headless --editor --path . --quit
+          mkdir -p build
+          "$godot" --headless --path . --export-debug "Android" build/Mamadysh_Most_Wanted_ARM64.apk
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mamadysh-Most-Wanted-Android-ARM64
+          path: build/Mamadysh_Most_Wanted_ARM64.apk
+          if-no-files-found: error
+          retention-days: 14
