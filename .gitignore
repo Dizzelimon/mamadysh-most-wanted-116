@@ -1,0 +1,9 @@
+.godot/
+.import/
+build/
+*.apk
+*.aab
+*.keystore
+*.jks
+.DS_Store
+Thumbs.db
