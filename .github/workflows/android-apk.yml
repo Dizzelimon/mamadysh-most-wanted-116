@@ -108,7 +108,7 @@ jobs:
           data = preset.read_text(encoding="utf-8")
           data = data.replace('keystore/debug="/opt/godot/mamadysh_release.jks"', f'keystore/debug="{sys.argv[1]}"')
           data = data.replace('keystore/debug_user="mamadysh"', 'keystore/debug_user="androiddebugkey"')
-          data = data.replace('keystore/debug_password="mamadysh116"', 'keystore/debug_password="android"')
+          data = data.replace('keystore/debug_password="mamadysh116"', 'keystore/debug_password="android"'); data = data.replace('keystore/release="/opt/godot/mamadysh_release.jks"', f'keystore/release="{sys.argv[1]}"'); data = data.replace('keystore/release_user="mamadysh"', 'keystore/release_user="androiddebugkey"'); data = data.replace('keystore/release_password="mamadysh116"', 'keystore/release_password="android"')
           preset.write_text(data, encoding="utf-8")
           PY
 
